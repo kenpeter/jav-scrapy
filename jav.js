@@ -174,6 +174,7 @@ function parseLinks(next) {
   let $ = cheerio.load(currentPageHtml);
   let links = [],
     fanhao = [];
+  // we have 30 for length
   let totalCountCurPage = $('a.movie-box').length;
   if (hasLimit) {
     if (count > totalCountCurPage) {
@@ -189,20 +190,30 @@ function parseLinks(next) {
   }
 
   function link_fanhao_handler() {
+    // $(this) it is in side each, so a.movie-box.....
     let link = $(this).attr('href');
+    // https://www.javbus.com/DSD-703
     links.push(link);
+    // only get the last part, so DSD-703
     fanhao.push(link.split('/').pop());
   }
 
+  // so we have done the 30 image links
+  // log
   console.log('正处理以下番号影片...\n'.green + fanhao.toString().yellow);
+  // next, null error
+  // links it is all movie links
   next(null, links);
 }
 
+// get items
+// next
 function getItems(links, next) {
+  // async, for each limit
   async.forEachOfLimit(
-    links,
-    parallel,
-    getItemPage,
+    links, // links of jav urls
+    parallel, // running 2 links at the same time
+    getItemPage, //
     function(err) {
       if (err) {
         if (err.message === 'limit') {
@@ -218,9 +229,6 @@ function getItems(links, next) {
 
 //
 function pageExist(callback) {
-
-  //test
-  //debugger;
 
   if (hasLimit && (count < 1) || targetFound) {
     return callback();
@@ -286,9 +294,6 @@ function pageExist(callback) {
           currentPageHtml = body;
           // back, null, res
 
-          //test
-          //debugger;
-
           // body is like all title, images, html markup...
           // callback(error, result), inside, seriesCallback and final attemptW
           callback(null, res);
@@ -316,6 +321,15 @@ function pageExist(callback) {
 }
 
 
+// \r\n\tvar gid = 34736369513;\r\n\tvar uc = 0;\r\n\tvar img = \'https://pics.dmm.co.jp/digital/video/mmb00138/mmb00138pl.jpg\';\r\n
+/*
+
+{ gid: '34736369513',
+  img: 'https://pics.dmm.co.jp/digital/video/mmb00138/mmb00138pl.jpg',
+  uc: '0',
+  lang: 'zh' }
+
+*/
 function parse(script) {
   let gid_r = /gid\s+=\s+(\d+)/g.exec(script);
   let gid = gid_r[1];
@@ -331,7 +345,11 @@ function parse(script) {
   };
 }
 
+// get item page
+// link (jav_url), index_of_page
+// callback
 function getItemPage(link, index, callback) {
+
   let fanhao = link.split('/').pop();
   let coverFilePath = path.join(output, fanhao + '.jpg');
   let magnetFilePath = path.join(output, fanhao + '.txt');
@@ -339,75 +357,139 @@ function getItemPage(link, index, callback) {
     count--;
   }
   try {
+    // /home/kenpeter/magnets/DSD-703.jpg
     fs.accessSync(coverFilePath, fs.F_OK);
+    // /home/kenpeter/magnets/DSD-703.txt
     fs.accessSync(magnetFilePath, fs.F_OK);
+
     console.log(('[' + fanhao + ']').yellow.bold.inverse + ' ' + 'Alreday fetched, SKIP!'.yellow);
     return callback();
   } catch (e) {
     request
       .get(link, function(err, res, body) {
+
         if (err) {
           console.error(('[' + fanhao + ']').red.bold.inverse + ' ' + err.message.red);
           errorCount++;
           return callback(null);
         }
+
         let $ = cheerio.load(body);
+        // lots of thing
         let script = $('script', 'body').eq(2).html();
+        // script: '\r\n\tvar gid = 34736369513;\r\n\tvar uc = 0;\r\n\tvar img = \'https://pics.dmm.co.jp/digital/video/mmb00138/mmb00138pl.jpg\';\r\n'
+        // meta:
+        /*
+        { gid: '34736369513',
+          img: 'https://pics.dmm.co.jp/digital/video/mmb00138/mmb00138pl.jpg',
+          uc: '0',
+          lang: 'zh' }
+        */
         let meta = parse(script);
 
+        // div col 3, p
+        // each index, element
         $("div.col-md-3 > p").each(function(i, e){
+          // text
           let text = $(e).text();
+          // meta.cat
           meta.category = [];
+          // meta.date
           if(text.includes("發行日期:")){
             meta.date = text.replace("發行日期: ", "");
           }else if(text.includes("系列:")){
+            // meta.series
             meta.series = text.replace("系列:", "");
           }else if(text.includes("類別:")){
             $("div.col-md-3 > p > span.genre").each(function(idx, span){
               let $span = $(span);
               if(!$span.attr("onmouseover")){
+                // push meta.cat
                 meta.category.push($span.text());
               }
             });
           }
         });
+
         // 提取演员
         meta.actress = [];
         $("span.genre").each(function(i, e){
           let $e = $(e);
           if($e.attr("onmouseover")){
+            // meta.actress
             meta.actress.push($e.find("a").text());
           }
         });
+
+        // meta.title
         // 提取片名
         meta.title = $("h3").text();
+
+        /*
+
+        < { gid: '34736369513',
+        <   img: 'https://pics.dmm.co.jp/digital/video/mmb00138/mmb00138pl.jpg',
+        <   uc: '0',
+        <   lang: 'zh',
+        <   category: [],
+        <   date: '2017-08-06',
+        <   actress:
+        <    [ '北条麻妃',
+        <      '長澤あずさ',
+        <      '橘エレナ',
+        <      '塚田詩織',
+        <      '佐々木恋海（向井恋）',
+        <      '綾波まこ',
+        <      '広瀬うみ',
+        <      '三島奈津子' ],
+        <   title: 'MMB-138 おバカ乳 服の下から猛アピールしてくるけしからん下品なオッパイ' }
+
+
+        */
 
         getItemMagnet(link, meta, callback);
       });
   }
 }
 
+
+// get item magnet
 function getItemMagnet(link, meta, done) {
+
+  //
   let fanhao = link.split('/').pop();
-  let itemOutput = output + "/" + fanhao
+  //
+  let itemOutput = output + "/" + fanhao;
+  //
   mkdirp.sync(itemOutput);
+  //
   let magnetFilePath = path.join(itemOutput, fanhao + '.json');
+  //
   fs.access(magnetFilePath, fs.F_OK, function(err) {
     if (err) {
       request
         .get(baseUrl + '/ajax/uncledatoolsbyajax.php?gid=' + meta.gid + '&lang=' + meta.lang + '&img=' + meta.img + '&uc=' + meta.uc + '&floor=' + Math.floor(Math.random() * 1e3 + 1),
           function(err, res, body) {
+
             if (err) {
               console.error(('[' + fanhao + ']').red.bold.inverse + ' ' + err.message.red);
               errorCount++;
               return done(null); // one magnet fetch fail, do not crash the whole task.
             }
+
+            /*
+'\t\t\t<tr style="color:#555;"><td colspan="4">暫時沒有磁力連結,請等待網友分享!</td></tr>\r\n\t\t\r\n\t\t\t<script type="text/javascript">\r\n\t\t\t$(\'#movie-loading\').hide();\r\n\t\t\t</script>\r\n
+            */
+
             let $ = cheerio.load(body);
             // 尝试解析高清磁链
+            //
             let HDAnchor = $('a[title="包含高清HD的磁力連結"]').parent().attr('href');
             // 尝试解析普通磁链
+            //
             let anchor = $('a[title="滑鼠右鍵點擊並選擇【複製連結網址】"]').attr('href');
             // 若存在高清磁链，则优先选取高清磁链
+            //
             anchor = HDAnchor || anchor;
             // 将磁链单独存入文本文件以方便下载
             if (anchor) {
@@ -429,7 +511,19 @@ function getItemMagnet(link, meta, done) {
             }
             jsonText += "\n\t]\n}";
 
+            //test
+            debugger;
+
+            /*
+            jsonText
+
+'{\n\t"title":"MMB-138 おバカ乳 服の下から猛アピールしてくるけしからん下品なオッパイ",\n\t"date":"2017-08-06",\n\t"series":"undefined",\n\t"anchor":"undefined",\n\t"category":[\n\t\t\n\t],\n\t"actress":[\n\t\t"北条麻妃",\n\t\t"長澤あずさ",\n\t\t"橘エレナ",\n\t\t"塚田詩織",\n\t\t"佐々木恋海（向井恋）",\n\t\t"綾波まこ",\n\t\t"広瀬うみ",\n\t\t"三島奈津子"\n\t]\n}'
+
+            */
+
             if (jsonText) { // magnet file not exists
+              // magnetFilePath: /home/kenpeter/magnets/MMB-138/MMB-138.json
+              // jsonText: {\n\t"title":"MMB-138 おバカ乳 服の下から猛アピールしてくるけしからん下品なオッパイ",\n\t"date":"2017-08-06",\n\t"series":"undefined",\n\t"anchor":"undefined",\n\t"category":[\n\t\t\n\t],\n\t"actress":[\n\t\t"北条麻妃",\n\t\t"長澤あずさ",\n\t\t"橘エレナ",\n\t\t"塚田詩織",\n\t\t"佐々木恋海（向井恋）",\n\t\t"綾波まこ",\n\t\t"広瀬うみ",\n\t\t"三島奈津子"\n\t]\n}
               fs.writeFile(magnetFilePath, jsonText + '\r\n',
                 function(err) {
                   if (err) {
@@ -449,20 +543,35 @@ function getItemMagnet(link, meta, done) {
   })
 }
 
+//
 function getItemCover(link, meta, done) {
+  //
   var fanhao = link.split('/').pop();
+  //
   var filename = fanhao + 'l.jpg';
+  //
   let itemOutput = output + "/" + fanhao
+  //
   mkdirp.sync(itemOutput);
+  //
   var fileFullPath = path.join(itemOutput, filename);
+  //
   fs.access(fileFullPath, fs.F_OK, function(err) {
+    // why use err???????
     if (err) {
+      //
       var coverFileStream = fs.createWriteStream(fileFullPath + '.part');
+      //
       var finished = false;
+      // request, get meta.img
       request.get(meta.img)
+        // end
         .on('end', function() {
+          // done
           if (!finished) {
+            // fs rename xxx.part to xxx
             fs.renameSync(fileFullPath + '.part', fileFullPath);
+            //
             finished = true;
             console.error(('[' + fanhao + ']').green.bold.inverse + '[封面]'.yellow.inverse, fileFullPath);
             getItemSmallCover(link, meta, done);
@@ -478,6 +587,7 @@ function getItemCover(link, meta, done) {
         })
         .pipe(coverFileStream);
     } else {
+      //
       console.log(('[' + fanhao + ']').green.bold.inverse + '[封面]'.yellow.inverse, 'file already exists, skip!'.yellow);
       getItemSmallCover(link, meta, done);
     }
